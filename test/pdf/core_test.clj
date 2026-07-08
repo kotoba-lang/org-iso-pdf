@@ -1,6 +1,7 @@
 (ns pdf.core-test
   "PDF image XObject extraction via a synthetic minimal PDF."
   (:require [clojure.test :refer [deftest is testing]]
+            [clojure.java.io :as io]
             [pdf.core :as pdf]))
 
 (defn- zlib [^bytes in]
@@ -8,6 +9,9 @@
     (.setInput d in) (.finish d)
     (while (not (.finished d)) (let [k (.deflate d buf)] (.write out buf 0 k)))
     (.end d) (mapv #(bit-and (int %) 0xff) (.toByteArray out))))
+
+(defn- rd-bytes [p]
+  (mapv #(bit-and (int %) 0xff) (with-open [in (io/input-stream (io/resource p))] (.readAllBytes in))))
 
 (deftest pdf-image-xobject
   (let [samples [10 20 30 40]                                            ; 2x2 gray, 8bpc
@@ -82,3 +86,19 @@
         page (first (pdf/pages parsed))]
     (is (= [0 0 200 200] (mapv int (:MediaBox page))))
     (is (= ["Hello" "World"] (pdf/page-text (:objects parsed) page)))))
+
+(deftest pdf-real-file-objstm
+  (testing "a real qpdf-repacked PDF (reportlab-generated content, re-saved by
+            qpdf/pikepdf with object_stream_mode=generate) — org-iso-pdf's
+            ObjStm support had only ever been exercised against a hand-built
+            synthetic PDF before this test. This fixture also has NO literal
+            'trailer' keyword at all (qpdf wrote a pure PDF 1.5+ /Type /XRef
+            cross-reference stream instead), so it additionally exercises
+            find-trailer's Catalog-scan fallback path for the first time."
+    (let [parsed (pdf/parse (rd-bytes "pdf/fixtures/qpdf_objstm.pdf"))
+          pgs    (pdf/pages parsed)]
+      (is (= :Catalog (:Type (:root parsed))))
+      (is (= 2 (count pgs)))
+      (is (= [["Hello ObjStm World" "kasane/org-iso-pdf real-file fixture"]
+              ["Second page"]]
+             (mapv #(pdf/page-text (:objects parsed) %) pgs))))))

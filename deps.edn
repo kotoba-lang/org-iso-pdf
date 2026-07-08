@@ -1,4 +1,4 @@
-{:paths ["src"]
+{:paths ["src" "resources"]
  :deps {io.github.kotoba-lang/org-ietf-deflate {:git/sha "d97242c7c4357f600987795e8e8cc11f3f851168"}}
  :aliases {:test {:extra-paths ["test"]
                   :extra-deps {io.github.cognitect-labs/test-runner
