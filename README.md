@@ -11,10 +11,23 @@ a linear struct grammar (COS object graph + xref + trailer), so this is a
 hand-written recursive-descent reader (dict/array/string/name/number/ref/
 stream). R0 collects top-level objects by scan (robust to classic or
 rebuilt xref), resolves the page tree, decodes FlateDecode content streams
-via `org-ietf-deflate`, and extracts BT/ET shown text. Objects packed in
-`/ObjStm` object streams are not resolved (R0). Image XObjects: FlateDecode
-→ raw samples; DCTDecode → opaque JPEG bytes (feed to `org-iso-jpeg`'s
-`decode-rgb`, kept decoupled); other filters → opaque.
+via `org-ietf-deflate`, and extracts BT/ET shown text. Image XObjects:
+FlateDecode → raw samples; DCTDecode → opaque JPEG bytes (feed to
+`org-iso-jpeg`'s `decode-rgb`, kept decoupled); other filters → opaque.
+
+**Objects packed inside `/Type /ObjStm` compressed object streams (ISO
+32000 §7.5.7)** are expanded and merged into `:objects` (2026-07-08) —
+`expand-objstm` decodes each ObjStm's header table (N pairs of `objnum
+offset`) and parses each packed object's bytes individually, all at
+generation 0 per spec. This matters in practice: **many real-world PDFs
+from recent Acrobat and other modern tools pack most of their objects into
+object streams**, so without this a lot of real PDFs would fail to resolve
+their object graph at all, not just lose some coverage. Cross-reference
+*streams* (the xref-table equivalent that usually accompanies ObjStm-using
+files) are still not parsed — this repo's object discovery stays scan-based
+(`"N G obj"` text search), which doesn't need the xref table at all, so
+files relying on ObjStm still resolve correctly through this path even
+though the xref stream itself is ignored.
 
 ## Usage
 
