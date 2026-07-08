@@ -196,8 +196,13 @@
     (if-let [cat (some (fn [[ref v]] (when (and (map? v) (= (:Type v) :Catalog)) ref)) objs)]
       {:Root {::ref cat}} {})))
 
+(declare decode-stream expand-objstm)
+
 (defn parse
-  "Parse PDF `data` (seq of unsigned bytes) into {:objects :trailer :root}."
+  "Parse PDF `data` (seq of unsigned bytes) into {:objects :trailer :root}.
+   Objects packed inside /Type /ObjStm compressed object streams (ISO 32000
+   §7.5.7 — common in PDFs written by recent Acrobat/other real-world
+   tools) are expanded and merged into :objects (see expand-objstm)."
   [data]
   (let [bv (vec data)
         s  (apply str (map char bv))
@@ -215,6 +220,7 @@
                            (recur @(:i st) (assoc acc [(first o) (first g)] v)))
                          (recur (+ k 3) acc)))))
                  acc))
+        objs (expand-objstm objs)
         trailer (find-trailer s bv objs)]
     {:objects objs :trailer trailer :root (resolve-ref objs (:Root trailer))}))
 
@@ -243,6 +249,49 @@
         fs (cond (nil? f) [] (keyword? f) [f] (vector? f) f :else [])]
     (reduce (fn [b filt] (case filt :FlateDecode (deflate/inflate b) b))
             (:raw stream) fs)))
+
+;; ---- object streams (/Type /ObjStm, ISO 32000 §7.5.7) ---------------------
+;; Real-world PDFs from recent Acrobat/other tools commonly pack many small
+;; objects into a compressed object stream instead of writing each as its
+;; own top-level "N G obj ... endobj" — the byte-level scan in `parse` can't
+;; see these (there's no literal "obj"/"endobj" text inside the compressed
+;; payload), so they need a dedicated expansion pass over the header table
+;; the ObjStm stream itself declares.
+(defn- objstm? [v]
+  (and (map? v) (::stream v) (= (:Type (:dict v)) :ObjStm)))
+
+(defn expand-objstm
+  "Decode every /Type /ObjStm object in `objs` and merge the objects it
+   contains back into the table (all at generation 0, per spec — an
+   object's generation is always 0 inside an object stream). An ObjStm's
+   own stream is: an N-pair header of whitespace-separated `objnum offset`
+   decimal integers, then (starting at byte /First) the N object values
+   concatenated back-to-back with no delimiter between them — an object's
+   end is only knowable from the next object's start (or end of stream for
+   the last one), so pairs are offset-sorted first. A stream can never be
+   nested inside an ObjStm (ISO 32000 §7.5.7), so the per-object parse
+   below never needs :bv (the raw-byte-vector reader-state field
+   parse-stream would use)."
+  [objs]
+  (reduce
+   (fn [acc [_ v]]
+     (if (objstm? v)
+       (let [decoded   (decode-stream acc v)
+             s         (apply str (map char decoded))
+             first-off (:First (:dict v))
+             nums      (mapv #?(:clj #(Long/parseLong %) :cljs #(js/parseInt % 10))
+                             (re-seq #"\d+" (subs s 0 first-off)))
+             pairs     (sort-by second (partition 2 nums))
+             bounded   (map (fn [[objnum off] nxt]
+                              [objnum off (if nxt (second nxt) (- (count s) first-off))])
+                            pairs (concat (rest pairs) [nil]))]
+         (reduce (fn [acc2 [objnum off end]]
+                   (let [obj-s (subs s (+ first-off off) (+ first-off end))
+                         val   (parse-value {:s obj-s :bv nil :i (atom 0) :len (count obj-s)})]
+                     (assoc acc2 [objnum 0] val)))
+                 acc bounded))
+       acc))
+   objs objs))
 
 (defn page-content-str [objs page]
   (let [c     (:Contents page)

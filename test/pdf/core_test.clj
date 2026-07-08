@@ -1,6 +1,6 @@
 (ns pdf.core-test
   "PDF image XObject extraction via a synthetic minimal PDF."
-  (:require [clojure.test :refer [deftest is]]
+  (:require [clojure.test :refer [deftest is testing]]
             [pdf.core :as pdf]))
 
 (defn- zlib [^bytes in]
@@ -31,6 +31,42 @@
       (let [dec (pdf/decode-image (:objects parsed) img)]
         (is (= :raw (:fmt dec)))
         (is (= samples (:samples dec)))))))                              ; FlateDecode → original samples
+
+(deftest objstm-expansion
+  (testing "objects packed inside a /Type /ObjStm compressed object stream
+            (ISO 32000 §7.5.7) — common in PDFs written by recent Acrobat/
+            other real-world tools; previously unsupported (R0 scope note)"
+    (let [ascii*   (fn [s] (mapv #(bit-and (int %) 0xff) (.getBytes ^String s "ISO-8859-1")))
+          obj5-txt "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"
+          obj6-txt "42"
+          body     (str obj5-txt " " obj6-txt)
+          off5     0
+          off6     (inc (count obj5-txt))                        ; +1 for the separating space
+          header   (str "5 " off5 " 6 " off6 " ")
+          objstm-plain (str header body)
+          comp     (zlib (byte-array (map (comp unchecked-byte int) objstm-plain)))
+          pdf-text (str "%PDF-1.5\n"
+                       "1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n"
+                       "2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj\n"
+                       "3 0 obj << /Type /Page /Parent 2 0 R "
+                       "/Resources << /Font << /F1 5 0 R >> >> "
+                       "/MediaBox [0 0 100 100] >> endobj\n"
+                       "4 0 obj << /Type /ObjStm /N 2 /First " (count header)
+                       " /Length " (count comp) " /Filter /FlateDecode >> stream\n")
+          bytes    (vec (concat (ascii* pdf-text) comp
+                                (ascii* "\nendstream endobj\ntrailer << /Root 1 0 R >>\n%%EOF\n")))
+          parsed   (pdf/parse bytes)
+          objs     (:objects parsed)]
+      (testing "both compressed objects landed in the object table at generation 0"
+        (is (contains? objs [5 0]))
+        (is (contains? objs [6 0]))
+        (is (= 42 (get objs [6 0]))))
+      (testing "an indirect reference into the compressed object stream resolves transparently"
+        (let [page (first (pdf/pages parsed))
+              font-ref (get-in page [:Resources :Font :F1])
+              font (pdf/resolve-ref objs font-ref)]
+          (is (= :Font (:Type font)))
+          (is (= :Helvetica (:BaseFont font))))))))
 
 (deftest pdf-text-extraction
   (let [ascii* (fn [s] (mapv #(bit-and (int %) 0xff) (.getBytes ^String s "ISO-8859-1")))
