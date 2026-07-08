@@ -1,0 +1,6 @@
+{:paths ["src"]
+ :deps {io.github.kotoba-lang/org-ietf-deflate {:git/sha "d97242c7c4357f600987795e8e8cc11f3f851168"}}
+ :aliases {:test {:extra-paths ["test"]
+                  :extra-deps {io.github.cognitect-labs/test-runner
+                               {:git/tag "v0.5.1" :git/sha "dfb30dd"}}
+                  :main-opts ["-m" "cognitect.test-runner"]}}}
