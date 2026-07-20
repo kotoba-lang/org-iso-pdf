@@ -1,6 +1,7 @@
 (ns pdf.core-test
   "PDF image XObject extraction via a synthetic minimal PDF."
   (:require [clojure.test :refer [deftest is testing]]
+            [clojure.string :as string]
             [clojure.java.io :as io]
             [pdf.core :as pdf]))
 
@@ -102,3 +103,21 @@
       (is (= [["Hello ObjStm World" "kasane/org-iso-pdf real-file fixture"]
               ["Second page"]]
              (mapv #(pdf/page-text (:objects parsed) %) pgs))))))
+
+(deftest writes-valid-multipage-pdf-with-xref
+  (let [bytes (pdf/write-document
+               [{:width 420 :height 297
+                 :content (str (pdf/rect-command {:x 10 :y 10 :width 400 :height 277})
+                               (pdf/line-command {:from [10 30] :to [410 30] :width 0.5})
+                               (pdf/text-command {:x 20 :y 270 :size 14
+                                                  :text "A-101 (Issued)"}))}
+                {:width 420 :height 297
+                 :content (pdf/text-command {:x 20 :y 270 :text "Second Sheet"})}])
+        text (apply str (map char bytes))
+        parsed (pdf/parse bytes)
+        pages (pdf/pages parsed)]
+    (is (string/includes? text "xref\n0 8"))
+    (is (string/includes? text "startxref"))
+    (is (= 2 (count pages)))
+    (is (= ["A-101 (Issued)"] (pdf/page-text (:objects parsed) (first pages))))
+    (is (= ["Second Sheet"] (pdf/page-text (:objects parsed) (second pages))))))
