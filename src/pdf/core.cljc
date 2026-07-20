@@ -124,8 +124,7 @@
       (let [save @(:i st)]
         (skip-ws st)
         (if (digit? (peek-c st))
-          (let [t2 (loop [acc []] (let [c (peek-c st)] (if (digit? c) (do (next-c st) (recur (conj acc c))) (apply str acc))))
-                save2 @(:i st)]
+          (let [t2 (loop [acc []] (let [c (peek-c st)] (if (digit? c) (do (next-c st) (recur (conj acc c))) (apply str acc))))]
             (skip-ws st)
             (if (and (= (peek-c st) \R)
                      (let [a (at st 1)] (or (nil? a) (ws? a) (delim? a))))
@@ -348,3 +347,78 @@
       (some #{:DCTDecode} fs)   {:fmt :jpeg :jpeg raw :w (:w img) :h (:h img)}
       (some #{:FlateDecode} fs) {:fmt :raw  :samples (deflate/inflate raw) :w (:w img) :h (:h img) :bpc (:bpc img)}
       :else                     {:fmt :opaque :opaque raw :w (:w img) :h (:h img)})))
+
+;; ---- portable writer ----------------------------------------------------
+(defn- pdf-number [value]
+  (if (integer? value) (str value)
+      (let [text (str (double value))]
+        (if (re-find #"[eE]" text)
+          #?(:clj (format "%.8f" (double value))
+             :cljs (.toFixed value 8))
+          text))))
+
+(defn escape-text [value]
+  (-> (str value)
+      (str/replace "\\" "\\\\")
+      (str/replace "(" "\\(")
+      (str/replace ")" "\\)")))
+
+(defn text-command
+  [{:keys [x y text size font] :or {size 10 font "F1"}}]
+  (str "BT /" font " " (pdf-number size) " Tf " (pdf-number x) " "
+       (pdf-number y) " Td (" (escape-text text) ") Tj ET\n"))
+
+(defn line-command [{:keys [from to width] :or {width 1}}]
+  (str (pdf-number width) " w " (pdf-number (first from)) " "
+       (pdf-number (second from)) " m " (pdf-number (first to)) " "
+       (pdf-number (second to)) " l S\n"))
+
+(defn rect-command [{:keys [x y width height fill?]}]
+  (str (pdf-number x) " " (pdf-number y) " " (pdf-number width) " "
+       (pdf-number height) " re " (if fill? "f" "S") "\n"))
+
+(defn- pad-left [value width]
+  (let [text (str value)]
+    (str (apply str (repeat (max 0 (- width (count text))) "0")) text)))
+
+(defn write-document
+  "Write a standards-shaped PDF 1.4 byte vector with classic xref/trailer.
+  Pages accept {:width :height :content}; content is a PDF graphics stream."
+  [pages]
+  (when-not (seq pages)
+    (throw (ex-info "PDF document requires at least one page" {})))
+  (let [pages (vec pages) font-id (+ 3 (* 2 (count pages)))
+        page-id #(+ 3 (* 2 %)) content-id #(+ 4 (* 2 %))
+        page-kids (str/join " " (map #(str (page-id %) " 0 R") (range (count pages))))
+        bodies
+        (vec
+         (concat
+          ["<< /Type /Catalog /Pages 2 0 R >>"
+           (str "<< /Type /Pages /Kids [" page-kids "] /Count " (count pages) " >>")]
+          (mapcat (fn [index {:keys [width height content]
+                              :or {width 595 height 842 content ""}}]
+                    [(str "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 "
+                          (pdf-number width) " " (pdf-number height)
+                          "] /Resources << /Font << /F1 " font-id
+                          " 0 R >> >> /Contents " (content-id index) " 0 R >>")
+                     (str "<< /Length " (count content) " >>\nstream\n"
+                          content "endstream")])
+                  (range) pages)
+          ["<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"]))
+        objects (mapv (fn [index body]
+                        (str (inc index) " 0 obj\n" body "\nendobj\n"))
+                      (range) bodies)
+        header "%PDF-1.4\n"
+        offsets (loop [position (count header) remaining objects result []]
+                  (if-let [object (first remaining)]
+                    (recur (+ position (count object)) (next remaining) (conj result position))
+                    result))
+        object-section (apply str objects)
+        xref-offset (+ (count header) (count object-section))
+        xref (str "xref\n0 " (inc (count objects)) "\n"
+                  "0000000000 65535 f \n"
+                  (apply str (map #(str (pad-left % 10) " 00000 n \n") offsets)))
+        trailer (str "trailer\n<< /Size " (inc (count objects)) " /Root 1 0 R >>\n"
+                     "startxref\n" xref-offset "\n%%EOF\n")
+        document (str header object-section xref trailer)]
+    (mapv #(bit-and (int %) 0xff) document)))
