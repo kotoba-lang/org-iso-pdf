@@ -421,4 +421,10 @@
         trailer (str "trailer\n<< /Size " (inc (count objects)) " /Root 1 0 R >>\n"
                      "startxref\n" xref-offset "\n%%EOF\n")
         document (str header object-section xref trailer)]
-    (mapv #(bit-and (int %) 0xff) document)))
+    ;; `code`, not `int`. On the JVM a String iterates as Characters and `int`
+    ;; gives the code point; on ClojureScript it iterates as one-character
+    ;; STRINGS and `int` gives nothing useful — the whole document came out as
+    ;; zeros. This function lives in a `.cljc` file, so it claimed to work on
+    ;; both platforms while producing garbage on one. (Measured 2026-07-31: the
+    ;; first four bytes were `00 00 00 00` instead of `%PDF`.)
+    (mapv #(bit-and (code %) 0xff) document)))

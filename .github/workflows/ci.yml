@@ -43,3 +43,22 @@ jobs:
 
       - name: Run tests
         run: clojure -M:test
+
+  # This namespace is portable by construction — no keys, no I/O — and
+  # `write-document` still produced zeros on ClojureScript because it used `int`
+  # on the characters of a String, which means something different there. A
+  # `.cljc` file is a claim about two platforms; this checks the second one.
+  portable:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeLaGuardo/setup-clojure@13.4
+        with:
+          cli: latest
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm install -g nbb@1.3.197
+      - run: clojure -P
+      - name: Test on nbb (ClojureScript)
+        run: nbb --classpath "$(clojure -Spath)" run_tests.cljs
