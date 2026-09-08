@@ -1,7 +1,7 @@
 (ns pdf.core-test
   "PDF image XObject extraction via a synthetic minimal PDF."
   (:require [clojure.test :refer [deftest is testing]]
-            [clojure.string :as string]
+            [kotoba.lang.text :as string]
             [clojure.java.io :as io]
             [pdf.core :as pdf]))
 

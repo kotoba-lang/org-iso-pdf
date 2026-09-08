@@ -1,5 +1,10 @@
 {:paths ["src" "resources"]
- :deps {io.github.kotoba-lang/org-ietf-deflate {:git/sha "430d754313e9082114ec00554e0b6770d9d318c5"}}
+ :deps {
+        ;; kotoba.lang.text, not clojure.string. Pinned as an explicit floor:
+        ;; tools.deps takes the NEWEST sha it is shown, so without a floor here
+        ;; this repo silently rides whatever a sibling happens to name.
+        io.github.kotoba-lang/text {:git/sha "73bdb13ae7a3d004b44bca08be03a3191157a38f"}
+       io.github.kotoba-lang/org-ietf-deflate {:git/sha "430d754313e9082114ec00554e0b6770d9d318c5"}}
  :aliases {:test {:extra-paths ["test"]
                   :extra-deps {io.github.cognitect-labs/test-runner
                                {:git/tag "v0.5.1" :git/sha "dfb30dd"}}
