@@ -11,7 +11,7 @@
    and extracts shown text. Limitations: objects packed inside /ObjStm object
    streams and DCTDecode/JPX image pixels are not decoded (opaque — DCTDecode
    bytes can be fed to org-iso-jpeg's decoder, kept decoupled here)."
-  (:require [clojure.string :as str]
+  (:require [kotoba.lang.text :as str]
             [deflate.core :as deflate]))
 
 ;; ---- character classes ---------------------------------------------------
