@@ -61,4 +61,4 @@ jobs:
       - run: npm install -g nbb@1.4.208
       - run: clojure -P
       - name: Test on nbb (ClojureScript)
-        run: nbb --classpath "$(clojure -Spath)" run_tests.cljs
+        run: nbb --classpath "$(clojure -Spath)" run_tests.cljk
