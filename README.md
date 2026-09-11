@@ -43,5 +43,5 @@ though the xref stream itself is ignored.
 ## Test
 
 ```sh
-clojure -M:test
+kbb -M:test
 ```
