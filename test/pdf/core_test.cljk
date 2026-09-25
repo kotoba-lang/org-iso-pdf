@@ -2,7 +2,7 @@
   "PDF image XObject extraction via a synthetic minimal PDF."
   (:require [kotoba.test :refer [deftest is testing]]
             [kotoba.lang.text :as string]
-            [clojure.java.io :as io]
+            [kotoba.io :as io]
             [pdf.core :as pdf]))
 
 (defn- zlib [^bytes in]
